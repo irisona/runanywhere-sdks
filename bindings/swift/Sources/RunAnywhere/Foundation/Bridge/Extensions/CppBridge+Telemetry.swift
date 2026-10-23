@@ -283,24 +283,19 @@ extension CppBridge {
     }
 }
 
-/// HTTP callback for telemetry - Swift provides HTTP transport for C++ telemetry
+/// HTTP callback for telemetry - Swift provides HTTP transport for C++ telemetry.
+///
+/// Iris patch: the app sends no SDK telemetry. Unlike 0.20.10, development mode sends usage
+/// statistics too (device model, OS version, token counts, timings) and the SDK has no switch, so
+/// every batch the C++ telemetry manager hands over is dropped here: no request is ever made,
+/// whatever the base URL. `performTelemetryHTTP` below is kept to keep the diff to upstream small.
 private func telemetryHttpCallback(
     userData _: UnsafeMutableRawPointer?,
-    endpoint: UnsafePointer<CChar>?,
-    jsonBody: UnsafePointer<CChar>?,
+    endpoint _: UnsafePointer<CChar>?,
+    jsonBody _: UnsafePointer<CChar>?,
     jsonLength _: Int,
-    requiresAuth: rac_bool_t
-) {
-    guard let endpoint = endpoint, let jsonBody = jsonBody else { return }
-
-    let path = String(cString: endpoint)
-    let json = String(cString: jsonBody)
-    let needsAuth = requiresAuth == RAC_TRUE
-
-    telemetryHTTPTasks.submit {
-        await performTelemetryHTTP(path: path, json: json, requiresAuth: needsAuth)
-    }
-}
+    requiresAuth _: rac_bool_t
+) {}
 
 private func performTelemetryHTTP(path: String, json: String, requiresAuth: Bool) async {
     let logger = SDKLogger(category: "CppBridge.Telemetry")
