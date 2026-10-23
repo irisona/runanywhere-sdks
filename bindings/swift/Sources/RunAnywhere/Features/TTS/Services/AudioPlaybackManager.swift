@@ -34,7 +34,7 @@ import os
 ///     print("Playback finished: \(success)")
 /// }
 /// ```
-public class AudioPlaybackManager: NSObject, ObservableObject, AVAudioPlayerDelegate, @unchecked Sendable {
+public class AudioPlaybackManager: NSObject, ObservableObject, @unchecked Sendable {
     private let logger = SDKLogger(category: "AudioPlayback")
 
     /// AVFoundation objects and one-shot callbacks are accessed only while the
@@ -255,27 +255,40 @@ public class AudioPlaybackManager: NSObject, ObservableObject, AVAudioPlayerDele
         completion?(success)
     }
 
-    // MARK: - AVAudioPlayerDelegate
+    deinit {
+        stop()
+    }
+}
 
-    public func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+// MARK: - AVAudioPlayerDelegate
+
+/// The conformance is stated here rather than on the class: the iOS 27 SDK marks
+/// `AVAudioPlayerDelegate` `NS_SWIFT_UI_ACTOR`, and declaring it on the type itself
+/// makes global-actor inference isolate every member of `AudioPlaybackManager` to
+/// the main actor — which breaks the nonisolated construction and `stop()` calls in
+/// `RunAnywhere+TTS` and `VoiceAgentMicDriver`. The callbacks are explicitly
+/// `nonisolated` so playback keeps the lock-guarded, thread-agnostic contract the
+/// class documents.
+extension AudioPlaybackManager: AVAudioPlayerDelegate {
+    nonisolated public func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         logger.info("Playback finished: \(flag ? "success" : "failed")")
         cleanupPlayback(success: flag)
     }
 
-    public func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+    nonisolated public func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
         logger.error("Playback decode error: \(error?.localizedDescription ?? "unknown")")
         cleanupPlayback(success: false)
     }
 
     #if os(iOS) || os(tvOS)
-    public func audioPlayerBeginInterruption(_ player: AVAudioPlayer) {
+    nonisolated public func audioPlayerBeginInterruption(_ player: AVAudioPlayer) {
         logger.info("Playback interrupted")
         DispatchQueue.main.async {
             self.isPlaying = false
         }
     }
 
-    public func audioPlayerEndInterruption(_ player: AVAudioPlayer, withOptions flags: Int) {
+    nonisolated public func audioPlayerEndInterruption(_ player: AVAudioPlayer, withOptions flags: Int) {
         logger.info("Playback interruption ended")
         if flags == AVAudioSession.InterruptionOptions.shouldResume.rawValue {
             player.play()
@@ -285,10 +298,6 @@ public class AudioPlaybackManager: NSObject, ObservableObject, AVAudioPlayerDele
         }
     }
     #endif
-
-    deinit {
-        stop()
-    }
 }
 
 // MARK: - Errors
